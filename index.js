@@ -9,90 +9,51 @@ const app = new App({
 const canalPrincipal = process.env.CANAL_PRINCIPAL;
 const canalEquipo = process.env.CANAL_EQUIPO;
 
-/* memoria simple de hilos */
-const mapaHilos = {};
-
 /* =========================
-   MENSAJES
+   COPIAR MENSAJES
 ========================= */
 
 app.event('message', async ({ event, client }) => {
 
-  if (event.bot_id) return;
-  if (event.subtype === 'message_changed') return;
-
   if (event.channel !== canalPrincipal) return;
 
-  let texto = event.text || "";
-
-  if (!texto && event.blocks) {
-    texto = JSON.stringify(event.blocks, null, 2);
-  }
-
-  if (!texto) texto = "(sin texto)";
+  if (event.bot_id) return;
 
   try {
 
-    /* MENSAJE PRINCIPAL (FLUJO) */
-    if (!event.thread_ts) {
+    const texto = event.text || "(mensaje sin texto)";
 
-      const enviado = await client.chat.postMessage({
-        channel: canalEquipo,
-        text: texto
-      });
+    await client.chat.postMessage({
+      channel: canalEquipo,
+      text: texto
+    });
 
-      mapaHilos[event.ts] = enviado.ts;
-
-      console.log("Flujo replicado");
-
-    }
-
-    /* RESPUESTA EN HILO */
-    else {
-
-      const hiloDestino = mapaHilos[event.thread_ts];
-
-      if (!hiloDestino) return;
-
-      await client.chat.postMessage({
-        channel: canalEquipo,
-        thread_ts: hiloDestino,
-        text: texto
-      });
-
-      console.log("Respuesta replicada");
-
-    }
+    console.log("Mensaje replicado");
 
   } catch (error) {
-    console.error("Error replicando mensaje:", error);
+    console.error("Error copiando mensaje:", error);
   }
 
 });
 
 
 /* =========================
-   REACCIONES
+   COPIAR REACCIONES
 ========================= */
 
 app.event('reaction_added', async ({ event, client }) => {
 
   try {
 
-    const threadDestino = mapaHilos[event.item.ts];
-
-    if (!threadDestino) return;
-
-    await client.reactions.add({
+    await client.chat.postMessage({
       channel: canalEquipo,
-      name: event.reaction,
-      timestamp: threadDestino
+      text: `:${event.reaction}: reacción agregada`
     });
 
-    console.log("Reacción replicada");
+    console.log("Reacción detectada");
 
   } catch (error) {
-    console.error("Error replicando reacción:", error);
+    console.error("Error reacción:", error);
   }
 
 });
