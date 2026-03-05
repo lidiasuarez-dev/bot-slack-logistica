@@ -22,7 +22,19 @@ app.event("message", async ({ event, client }) => {
 
     if (event.channel !== canalPrincipal) return;
 
-    const texto = event.text || "(sin texto)";
+let texto = event.text || "";
+
+if (!texto && event.blocks) {
+  texto = JSON.stringify(event.blocks, null, 2);
+}
+
+if (!texto && event.attachments) {
+  texto = JSON.stringify(event.attachments, null, 2);
+}
+
+if (!texto) {
+  texto = "(mensaje sin texto)";
+}
 
     // TS raíz del hilo
     const threadRaiz = event.thread_ts || event.ts;
