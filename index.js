@@ -1,68 +1,55 @@
-require('dotenv').config();
-const { App } = require('@slack/bolt');
+require("dotenv").config();
+const { App } = require("@slack/bolt");
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
+const canalPrincipal = "C0191AFFM71";
+const canalEquipo = "C08B8F8FJUC";
+
 const threadMap = {};
 
-const MARCAS = [
-  "San Camilo", "Barrita Burrito", "Sushi Fans", "Animal Cocina",
-  "Sierra Nevada", "Juan Valdez", "Chorizo Artesano", "Lo Saldes",
-  "Just Burger", "Sin Miedo", "Shaka", "Voraz",
-  "Mekong", "Bangkok", "Fatboy", "Delirio",
-  "Tamashi Sushi", "Gari Food", "Gari Sushi",
-  "Burger Depot"
-];
+/* -----------------------------
+   MENSAJE PRINCIPAL
+------------------------------*/
 
-/* =========================
-   MENSAJES PRINCIPALES
-========================= */
+app.event("message", async ({ event, client }) => {
 
-app.event('message', async ({ event, client }) => {
+  if (event.channel !== canalPrincipal) return;
+  if (event.subtype === "bot_message") return;
 
-  if (event.channel !== process.env.CANAL_PRINCIPAL) return;
+  // SOLO mensajes principales
+  if (!event.thread_ts) {
 
-  if (event.thread_ts) return;
+    try {
 
-  let texto = event.text || "";
+      const resultado = await client.chat.postMessage({
+        channel: canalEquipo,
+        text: event.text || "Nuevo flujo"
+      });
 
-  const contieneMarca = MARCAS.some(m =>
-    texto.toLowerCase().includes(m.toLowerCase())
-  );
+      threadMap[event.ts] = resultado.ts;
 
-  if (!contieneMarca) return;
+      console.log("Flujo replicado");
 
-  try {
+    } catch (error) {
+      console.error("Error replicando flujo:", error);
+    }
 
-    const enviado = await client.chat.postMessage({
-      channel: process.env.CANAL_EQUIPO,
-      text: texto,
-      blocks: event.blocks || undefined
-    });
-
-    // guardar relación de hilos
-    threadMap[event.ts] = enviado.ts;
-
-    console.log("Hilo mapeado:", event.ts, "→", enviado.ts);
-
-  } catch (error) {
-    console.error("Error enviando mensaje:", error);
   }
 
 });
 
-/* =========================
-   RESPUESTAS EN HILOS
-========================= */
+/* -----------------------------
+   COMENTARIOS
+------------------------------*/
 
-app.event('message', async ({ event, client }) => {
+app.event("message", async ({ event, client }) => {
 
+  if (event.channel !== canalPrincipal) return;
   if (!event.thread_ts) return;
-
-  if (event.channel !== process.env.CANAL_PRINCIPAL) return;
 
   const threadDestino = threadMap[event.thread_ts];
 
@@ -71,22 +58,24 @@ app.event('message', async ({ event, client }) => {
   try {
 
     await client.chat.postMessage({
-      channel: process.env.CANAL_EQUIPO,
+      channel: canalEquipo,
       text: event.text,
       thread_ts: threadDestino
     });
 
+    console.log("Comentario replicado");
+
   } catch (error) {
-    console.error("Error replicando respuesta:", error);
+    console.error("Error replicando comentario:", error);
   }
 
 });
 
-/* =========================
+/* -----------------------------
    REACCIONES
-========================= */
+------------------------------*/
 
-app.event('reaction_added', async ({ event, client }) => {
+app.event("reaction_added", async ({ event, client }) => {
 
   const threadDestino = threadMap[event.item.ts];
 
@@ -95,10 +84,12 @@ app.event('reaction_added', async ({ event, client }) => {
   try {
 
     await client.reactions.add({
-      channel: process.env.CANAL_EQUIPO,
-      timestamp: threadDestino,
-      name: event.reaction
+      channel: canalEquipo,
+      name: event.reaction,
+      timestamp: threadDestino
     });
+
+    console.log("Reacción replicada");
 
   } catch (error) {
     console.error("Error replicando reacción:", error);
@@ -106,7 +97,11 @@ app.event('reaction_added', async ({ event, client }) => {
 
 });
 
+/* -----------------------------
+   INICIAR SERVIDOR
+------------------------------*/
+
 (async () => {
   await app.start(process.env.PORT || 3000);
-  console.log("⚡️ Bot sincronizando hilos en puerto", process.env.PORT);
-});
+  console.log("⚡ Bot corriendo en puerto", process.env.PORT);
+})();
