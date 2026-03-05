@@ -1,84 +1,79 @@
-require("dotenv").config();
-const { App } = require("@slack/bolt");
+require('dotenv').config();
+const { App } = require('@slack/bolt');
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
-const canalPrincipal = "C0191AFFM71";
-const canalEquipo = "C08B8F8FJUC";
+const canalPrincipal = process.env.CANAL_PRINCIPAL;
+const canalEquipo = process.env.CANAL_EQUIPO;
 
-const threadMap = {};
-const messageMap = {};
+let mapaHilos = {};
 
-/* -----------------------------
-   MENSAJE PRINCIPAL
-------------------------------*/
-
-app.event("message", async ({ event, client }) => {
+// CUANDO LLEGA MENSAJE
+app.event('message', async ({ event, client }) => {
 
   if (event.channel !== canalPrincipal) return;
-  if (event.subtype === "bot_message") return;
 
   try {
 
-    // MENSAJE PRINCIPAL
-    if (!event.thread_ts) {
+    const res = await client.chat.postMessage({
+      channel: canalEquipo,
+      text: event.text || "(mensaje sin texto)"
+    });
 
-      const res = await client.chat.postMessage({
-        channel: canalEquipo,
-        text: event.text || "Nuevo flujo"
-      });
+    mapaHilos[event.ts] = res.ts;
 
-      threadMap[event.ts] = res.ts;
-      messageMap[event.ts] = res.ts;
-
-      console.log("Flujo replicado");
-
-    }
-
-    // MENSAJE EN HILO
-    else {
-
-      const destinoThread = threadMap[event.thread_ts];
-
-      if (!destinoThread) return;
-
-      const res = await client.chat.postMessage({
-        channel: canalEquipo,
-        text: event.text,
-        thread_ts: destinoThread
-      });
-
-      messageMap[event.ts] = res.ts;
-
-      console.log("Comentario replicado");
-
-    }
+    console.log("Flujo replicado");
 
   } catch (error) {
-    console.error("Error replicando mensaje:", error);
+    console.error("Error replicando flujo:", error);
   }
 
 });
 
-/* -----------------------------
-   REACCIONES
-------------------------------*/
+// COMENTARIOS EN HILOS
+app.event('message', async ({ event, client }) => {
 
-app.event("reaction_added", async ({ event, client }) => {
+  if (!event.thread_ts) return;
+  if (event.channel !== canalPrincipal) return;
+
+  const hiloDestino = mapaHilos[event.thread_ts];
+
+  if (!hiloDestino) return;
 
   try {
 
-    const destino = messageMap[event.item.ts];
+    await client.chat.postMessage({
+      channel: canalEquipo,
+      thread_ts: hiloDestino,
+      text: event.text
+    });
 
-    if (!destino) return;
+    console.log("Comentario replicado");
+
+  } catch (error) {
+    console.error("Error replicando comentario:", error);
+  }
+
+});
+
+// REACCIONES
+app.event('reaction_added', async ({ event, client }) => {
+
+  if (event.channel !== canalPrincipal) return;
+
+  const hiloDestino = mapaHilos[event.item.ts];
+
+  if (!hiloDestino) return;
+
+  try {
 
     await client.reactions.add({
       channel: canalEquipo,
       name: event.reaction,
-      timestamp: destino
+      timestamp: hiloDestino
     });
 
     console.log("Reacción replicada");
@@ -88,10 +83,6 @@ app.event("reaction_added", async ({ event, client }) => {
   }
 
 });
-
-/* -----------------------------
-   INICIAR SERVIDOR
-------------------------------*/
 
 (async () => {
   await app.start(process.env.PORT || 3000);
