@@ -1,86 +1,85 @@
-require("dotenv").config();
-const { App, ExpressReceiver } = require("@slack/bolt");
-
-const receiver = new ExpressReceiver({
-  signingSecret: process.env.SLACK_SIGNING_SECRET,
-  endpoints: "/slack/events"
-});
+require('dotenv').config();
+const { App } = require('@slack/bolt');
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
-  receiver
+  signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
 const canalPrincipal = process.env.CANAL_PRINCIPAL;
 const canalEquipo = process.env.CANAL_EQUIPO;
 
-const mapaMensajes = {};
+/* memoria simple de hilos */
+const mapaHilos = {};
 
-app.event("message", async ({ event, client }) => {
+/* =========================
+   MENSAJES
+========================= */
+
+app.event('message', async ({ event, client }) => {
+
+  if (event.bot_id) return;
+  if (event.subtype === 'message_changed') return;
+
+  if (event.channel !== canalPrincipal) return;
+
+  let texto = event.text || "";
+
+  if (!texto && event.blocks) {
+    texto = JSON.stringify(event.blocks, null, 2);
+  }
+
+  if (!texto) texto = "(sin texto)";
 
   try {
 
-    if (event.channel !== canalPrincipal) return;
+    /* MENSAJE PRINCIPAL (FLUJO) */
+    if (!event.thread_ts) {
 
-let texto = event.text || "";
-
-if (!texto && event.blocks) {
-  texto = JSON.stringify(event.blocks, null, 2);
-}
-
-if (!texto && event.attachments) {
-  texto = JSON.stringify(event.attachments, null, 2);
-}
-
-if (!texto) {
-  texto = "(mensaje sin texto)";
-}
-
-    // TS raíz del hilo
-    const threadRaiz = event.thread_ts || event.ts;
-
-    let threadDestino = mapaMensajes[threadRaiz];
-
-    // SI NO EXISTE, CREAR MENSAJE PRINCIPAL
-    if (!threadDestino) {
-
-      const res = await client.chat.postMessage({
+      const enviado = await client.chat.postMessage({
         channel: canalEquipo,
         text: texto
       });
 
-      mapaMensajes[threadRaiz] = res.ts;
+      mapaHilos[event.ts] = enviado.ts;
 
       console.log("Flujo replicado");
 
-      return;
     }
 
-    // SI EXISTE → ES COMENTARIO
-    await client.chat.postMessage({
-      channel: canalEquipo,
-      thread_ts: threadDestino,
-      text: texto
-    });
+    /* RESPUESTA EN HILO */
+    else {
 
-    console.log("Comentario replicado en hilo");
+      const hiloDestino = mapaHilos[event.thread_ts];
+
+      if (!hiloDestino) return;
+
+      await client.chat.postMessage({
+        channel: canalEquipo,
+        thread_ts: hiloDestino,
+        text: texto
+      });
+
+      console.log("Respuesta replicada");
+
+    }
 
   } catch (error) {
-
     console.error("Error replicando mensaje:", error);
-
   }
 
 });
 
 
-app.event("reaction_added", async ({ event, client }) => {
+/* =========================
+   REACCIONES
+========================= */
+
+app.event('reaction_added', async ({ event, client }) => {
 
   try {
 
-    if (event.channel !== canalPrincipal) return;
-
-    const threadDestino = mapaMensajes[event.item.ts];
+    const threadDestino = mapaHilos[event.item.ts];
 
     if (!threadDestino) return;
 
@@ -93,16 +92,17 @@ app.event("reaction_added", async ({ event, client }) => {
     console.log("Reacción replicada");
 
   } catch (error) {
-
     console.error("Error replicando reacción:", error);
-
   }
 
 });
 
 
-const PORT = process.env.PORT || 3000;
+/* =========================
+   SERVIDOR
+========================= */
 
-receiver.app.listen(PORT, () => {
-  console.log("⚡ Bot corriendo en puerto", PORT);
-});
+(async () => {
+  await app.start(process.env.PORT || 3000);
+  console.log("⚡ Bot corriendo en puerto", process.env.PORT);
+})();
