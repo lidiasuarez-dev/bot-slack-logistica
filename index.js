@@ -1,9 +1,15 @@
-require('dotenv').config();
-const { App } = require('@slack/bolt');
+require("dotenv").config();
+const { App, ExpressReceiver } = require("@slack/bolt");
+
+// Creamos el receiver para exponer /slack/events
+const receiver = new ExpressReceiver({
+  signingSecret: process.env.SLACK_SIGNING_SECRET,
+  endpoints: "/slack/events"
+});
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
-  signingSecret: process.env.SLACK_SIGNING_SECRET
+  receiver
 });
 
 const canalPrincipal = process.env.CANAL_PRINCIPAL;
@@ -11,8 +17,8 @@ const canalEquipo = process.env.CANAL_EQUIPO;
 
 let mapaHilos = {};
 
-// CUANDO LLEGA MENSAJE
-app.event('message', async ({ event, client }) => {
+// MENSAJES
+app.event("message", async ({ event, client }) => {
 
   if (event.channel !== canalPrincipal) return;
 
@@ -34,7 +40,7 @@ app.event('message', async ({ event, client }) => {
 });
 
 // COMENTARIOS EN HILOS
-app.event('message', async ({ event, client }) => {
+app.event("message", async ({ event, client }) => {
 
   if (!event.thread_ts) return;
   if (event.channel !== canalPrincipal) return;
@@ -60,7 +66,7 @@ app.event('message', async ({ event, client }) => {
 });
 
 // REACCIONES
-app.event('reaction_added', async ({ event, client }) => {
+app.event("reaction_added", async ({ event, client }) => {
 
   if (event.channel !== canalPrincipal) return;
 
@@ -84,7 +90,9 @@ app.event('reaction_added', async ({ event, client }) => {
 
 });
 
-(async () => {
-  await app.start(process.env.PORT || 3000);
-  console.log("⚡ Bot corriendo en puerto", process.env.PORT);
-})();
+// Arranca servidor
+const PORT = process.env.PORT || 3000;
+
+receiver.app.listen(PORT, () => {
+  console.log("⚡ Bot corriendo en puerto", PORT);
+});
