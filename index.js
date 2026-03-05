@@ -10,15 +10,20 @@ app.event('message', async ({ event, client }) => {
 
   console.log("Evento recibido:", event);
 
-  // evitar que replique lo que el mismo bot publica
-  if (event.bot_id) return;
+  // evitar loop del propio bot
+  if (event.bot_id && event.bot_id === process.env.BOT_ID) return;
 
   // solo escuchar canal principal
   if (event.channel !== process.env.CANAL_PRINCIPAL) return;
 
-  const texto = event.text || "";
+  let texto = event.text || "";
 
-  console.log("Mensaje detectado:", texto);
+  // si el mensaje viene en bloques (flows)
+  if (event.blocks) {
+    texto += "\n";
+  }
+
+  console.log("Enviando al canal equipo:", texto);
 
   await client.chat.postMessage({
     channel: process.env.CANAL_EQUIPO,
