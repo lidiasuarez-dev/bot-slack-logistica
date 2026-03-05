@@ -10,6 +10,7 @@ const canalPrincipal = "C0191AFFM71";
 const canalEquipo = "C08B8F8FJUC";
 
 const threadMap = {};
+const messageMap = {};
 
 /* -----------------------------
    MENSAJE PRINCIPAL
@@ -20,53 +21,44 @@ app.event("message", async ({ event, client }) => {
   if (event.channel !== canalPrincipal) return;
   if (event.subtype === "bot_message") return;
 
-  // SOLO mensajes principales
-  if (!event.thread_ts) {
+  try {
 
-    try {
+    // MENSAJE PRINCIPAL
+    if (!event.thread_ts) {
 
-      const resultado = await client.chat.postMessage({
+      const res = await client.chat.postMessage({
         channel: canalEquipo,
         text: event.text || "Nuevo flujo"
       });
 
-      threadMap[event.ts] = resultado.ts;
+      threadMap[event.ts] = res.ts;
+      messageMap[event.ts] = res.ts;
 
       console.log("Flujo replicado");
 
-    } catch (error) {
-      console.error("Error replicando flujo:", error);
     }
 
-  }
+    // MENSAJE EN HILO
+    else {
 
-});
+      const destinoThread = threadMap[event.thread_ts];
 
-/* -----------------------------
-   COMENTARIOS
-------------------------------*/
+      if (!destinoThread) return;
 
-app.event("message", async ({ event, client }) => {
+      const res = await client.chat.postMessage({
+        channel: canalEquipo,
+        text: event.text,
+        thread_ts: destinoThread
+      });
 
-  if (event.channel !== canalPrincipal) return;
-  if (!event.thread_ts) return;
+      messageMap[event.ts] = res.ts;
 
-  const threadDestino = threadMap[event.thread_ts];
+      console.log("Comentario replicado");
 
-  if (!threadDestino) return;
-
-  try {
-
-    await client.chat.postMessage({
-      channel: canalEquipo,
-      text: event.text,
-      thread_ts: threadDestino
-    });
-
-    console.log("Comentario replicado");
+    }
 
   } catch (error) {
-    console.error("Error replicando comentario:", error);
+    console.error("Error replicando mensaje:", error);
   }
 
 });
@@ -77,16 +69,16 @@ app.event("message", async ({ event, client }) => {
 
 app.event("reaction_added", async ({ event, client }) => {
 
-  const threadDestino = threadMap[event.item.ts];
-
-  if (!threadDestino) return;
-
   try {
+
+    const destino = messageMap[event.item.ts];
+
+    if (!destino) return;
 
     await client.reactions.add({
       channel: canalEquipo,
       name: event.reaction,
-      timestamp: threadDestino
+      timestamp: destino
     });
 
     console.log("Reacción replicada");
