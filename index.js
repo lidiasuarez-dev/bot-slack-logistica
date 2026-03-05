@@ -1,7 +1,6 @@
 require("dotenv").config();
 const { App, ExpressReceiver } = require("@slack/bolt");
 
-// Creamos el receiver para exponer /slack/events
 const receiver = new ExpressReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET,
   endpoints: "/slack/events"
@@ -15,41 +14,34 @@ const app = new App({
 const canalPrincipal = process.env.CANAL_PRINCIPAL;
 const canalEquipo = process.env.CANAL_EQUIPO;
 
-let mapaHilos = {};
+const mapaHilos = {};
 
-// MENSAJES
 app.event("message", async ({ event, client }) => {
 
   if (event.channel !== canalPrincipal) return;
+  if (event.subtype === "bot_message" && !event.thread_ts) return;
 
   try {
 
-    const res = await client.chat.postMessage({
-      channel: canalEquipo,
-      text: event.text || "(mensaje sin texto)"
-    });
+    // MENSAJE PRINCIPAL (flujo)
+    if (!event.thread_ts) {
 
-    mapaHilos[event.ts] = res.ts;
+      const res = await client.chat.postMessage({
+        channel: canalEquipo,
+        text: event.text || "(sin texto)"
+      });
 
-    console.log("Flujo replicado");
+      mapaHilos[event.ts] = res.ts;
 
-  } catch (error) {
-    console.error("Error replicando flujo:", error);
-  }
+      console.log("Flujo replicado");
 
-});
+      return;
+    }
 
-// COMENTARIOS EN HILOS
-app.event("message", async ({ event, client }) => {
+    // COMENTARIO EN HILO
+    const hiloDestino = mapaHilos[event.thread_ts];
 
-  if (!event.thread_ts) return;
-  if (event.channel !== canalPrincipal) return;
-
-  const hiloDestino = mapaHilos[event.thread_ts];
-
-  if (!hiloDestino) return;
-
-  try {
+    if (!hiloDestino) return;
 
     await client.chat.postMessage({
       channel: canalEquipo,
@@ -57,15 +49,17 @@ app.event("message", async ({ event, client }) => {
       text: event.text
     });
 
-    console.log("Comentario replicado");
+    console.log("Comentario replicado en hilo");
 
   } catch (error) {
-    console.error("Error replicando comentario:", error);
+
+    console.error("Error replicando mensaje:", error);
+
   }
 
 });
 
-// REACCIONES
+
 app.event("reaction_added", async ({ event, client }) => {
 
   if (event.channel !== canalPrincipal) return;
@@ -85,12 +79,14 @@ app.event("reaction_added", async ({ event, client }) => {
     console.log("Reacción replicada");
 
   } catch (error) {
+
     console.error("Error replicando reacción:", error);
+
   }
 
 });
 
-// Arranca servidor
+
 const PORT = process.env.PORT || 3000;
 
 receiver.app.listen(PORT, () => {
