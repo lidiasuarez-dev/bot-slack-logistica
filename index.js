@@ -14,39 +14,41 @@ const app = new App({
 const canalPrincipal = process.env.CANAL_PRINCIPAL;
 const canalEquipo = process.env.CANAL_EQUIPO;
 
-const mapaHilos = {};
+const mapaMensajes = {};
 
 app.event("message", async ({ event, client }) => {
 
-  if (event.channel !== canalPrincipal) return;
-  if (event.subtype === "bot_message" && !event.thread_ts) return;
-
   try {
 
-    // MENSAJE PRINCIPAL (flujo)
-    if (!event.thread_ts) {
+    if (event.channel !== canalPrincipal) return;
+
+    const texto = event.text || "(sin texto)";
+
+    // TS raíz del hilo
+    const threadRaiz = event.thread_ts || event.ts;
+
+    let threadDestino = mapaMensajes[threadRaiz];
+
+    // SI NO EXISTE, CREAR MENSAJE PRINCIPAL
+    if (!threadDestino) {
 
       const res = await client.chat.postMessage({
         channel: canalEquipo,
-        text: event.text || "(sin texto)"
+        text: texto
       });
 
-      mapaHilos[event.ts] = res.ts;
+      mapaMensajes[threadRaiz] = res.ts;
 
       console.log("Flujo replicado");
 
       return;
     }
 
-    // COMENTARIO EN HILO
-    const hiloDestino = mapaHilos[event.thread_ts];
-
-    if (!hiloDestino) return;
-
+    // SI EXISTE → ES COMENTARIO
     await client.chat.postMessage({
       channel: canalEquipo,
-      thread_ts: hiloDestino,
-      text: event.text
+      thread_ts: threadDestino,
+      text: texto
     });
 
     console.log("Comentario replicado en hilo");
@@ -62,18 +64,18 @@ app.event("message", async ({ event, client }) => {
 
 app.event("reaction_added", async ({ event, client }) => {
 
-  if (event.channel !== canalPrincipal) return;
-
-  const hiloDestino = mapaHilos[event.item.ts];
-
-  if (!hiloDestino) return;
-
   try {
+
+    if (event.channel !== canalPrincipal) return;
+
+    const threadDestino = mapaMensajes[event.item.ts];
+
+    if (!threadDestino) return;
 
     await client.reactions.add({
       channel: canalEquipo,
       name: event.reaction,
-      timestamp: hiloDestino
+      timestamp: threadDestino
     });
 
     console.log("Reacción replicada");
